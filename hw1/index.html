@@ -42,10 +42,11 @@
     </div>
     <br />
     <div>
-      As shown below, we successfully render basic/test4.svg. However, we can
-      see in the inspection that there is some aliasing for the longer, slimmer,
-      stretched-out shapes. This is because we are limiting each pixel to be
-      only one exact color without any interpolation, smoothing, or filtering.
+      As shown below, we successfully render <code>basic/test4.svg</code>.
+      However, we can see in the inspection that there is some aliasing for the
+      longer, slimmer, stretched-out shapes. This is because we are limiting
+      each pixel to be only one exact color without any interpolation,
+      smoothing, or filtering.
     </div>
     <br />
     <img src="images/2-1.png" style="max-height: 600px; max-width: 800px" />
@@ -99,17 +100,17 @@
     <br />
     <div style="display: flex">
       <div>
-        <div>Supersample rate: 1 per pixel</div>
+        <div>Sample rate: 1 per pixel</div>
         <br />
         <img src="images/2-1.png" style="max-height: 400px; max-width: 500px" />
       </div>
       <div>
-        <div>Supersample rate: 4 per pixel</div>
+        <div>Sample rate: 4 per pixel</div>
         <br />
         <img src="images/2-2.png" style="max-height: 400px; max-width: 500px" />
       </div>
       <div>
-        <div>Supersample rate: 16 per pixel</div>
+        <div>Sample rate: 16 per pixel</div>
         <br />
         <img src="images/2-4.png" style="max-height: 400px; max-width: 500px" />
       </div>
@@ -123,7 +124,101 @@
       the functionality is working correctly, I attempted to make the robot run
       as displayed below.
     </div>
-    <br />
     <img src="images/3.png" style="max-height: 600px; max-width: 800px" />
+    <br />
+    <h3>Task 4: Barycentric coordinates (10 pts)</h3>
+    <div>
+      The goal of this task is to support texture interpolation via barycentric
+      coordinates. The high-level idea is very simple, for any point in a
+      triangle, when interpolating its value from the values of the vertices, it
+      is instinctive that the further a vertice is from the point, the less
+      influence it should have and vice versa. In practice, a point in
+      barycentric coordinate can be represented in
+      <code>[alpha, beta, gamma]</code> where
+      <code>alpha + beta + gamma = 1</code>, and the point's value as
+      <code
+        >alpha * value_at_vertice_a + beta * value_at_vertice_b + gamma *
+        value_at_vertice_c</code
+      >. As shown below in the triangle example, we can see that areas closer to
+      the green vertices are more green, red more red, and blue more blue. For
+      areas in between two or three vertices, we see that it is proportionally
+      influenced by the vertices relative to its distance from them (e.g. purple
+      area between red and blue vertices).
+    </div>
+    <img src="images/4-1.png" style="max-height: 600px; max-width: 800px" />
+    <div>
+      For my implementation of the barycentric interpolation (i.e.
+      <code>rasterize_interpolated_color_triangle()</code>), it basically
+      follows the general struction of the previous
+      <code>rasterize_triangle</code> function. The only difference is that
+      since we aren't given a color anymore, we need to calculate the color from
+      the vertices. This is done with the line test ratio as explained in
+      lecture. We essentially get the proportion of a vertice's influence by
+      comparing its distance to our sample point against its perpendicular
+      distance to the opposite edge. As shown below, we successfully render
+      <code>basic/test7.svg</code>.
+    </div>
+    <img src="images/4-2.png" style="max-height: 600px; max-width: 800px" />
+    <br />
+    <h3>Task 5: "Pixel sampling" for texture mapping (15 pts)</h3>
+    <div>some text</div>
+    <br />
+    <div>some text</div>
+    <br />
+    <div>some text</div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Nearest sampling at 1 sample per pixel</div>
+        <br />
+        <img src="images/5-1.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+      <div>
+        <div>Bilinear sampling at 1 sample per pixel</div>
+        <br />
+        <img src="images/5-2.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Nearest sampling at 16 sample per pixel</div>
+        <br />
+        <img src="images/5-3.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+      <div>
+        <div>Bilinear sampling at 16 sample per pixel</div>
+        <br />
+        <img src="images/5-4.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+    </div>
+    <br />
+    <div>We can also see the same effect in a few other examples:</div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Nearest sampling at 1 sample per pixel</div>
+        <br />
+        <img src="images/5-5.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+      <div>
+        <div>Bilinear sampling at 1 sample per pixel</div>
+        <br />
+        <img src="images/5-6.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Nearest sampling at 1 sample per pixel</div>
+        <br />
+        <img src="images/5-7.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+      <div>
+        <div>Bilinear sampling at 1 sample per pixel</div>
+        <br />
+        <img src="images/5-8.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+    </div>
   </body>
 </html>
