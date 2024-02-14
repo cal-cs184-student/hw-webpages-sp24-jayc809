@@ -87,15 +87,14 @@
       Next, we implement part 2, which essentially comes down to loading tbe
       sample buffer into the frame buffer and modifying the
       <code>resolve_to_framebuffer</code> function. This is relatively easy as
-      we simply loop over every output pixel and taking its average color across
-      the <code>sample_rate</code> segments. The geometry/order of the subpixel
-      grid doesn't even matter here as we are just taking the mean.
+      we simply loop over every screen pixel and taking its average color across
+      the corresponding subpixels.
     </div>
     <br />
     <div>
       Finally, we can see the results below. Using the same example as task 1,
       we can see that when we up the sample rate to 4 and 16, we get
-      increasingly less aliasing and clearer edges for all 5 shapes.
+      increasingly less aliasing and more defined edges for the 5 shapes.
     </div>
     <br />
     <div style="display: flex">
@@ -135,15 +134,15 @@
       influence it should have and vice versa. In practice, a point in
       barycentric coordinate can be represented in
       <code>[alpha, beta, gamma]</code> where
-      <code>alpha + beta + gamma = 1</code>, and the point's value as
+      <code>alpha + beta + gamma = 1</code>, and the its value being equal to
       <code
         >alpha * value_at_vertice_a + beta * value_at_vertice_b + gamma *
         value_at_vertice_c</code
       >. As shown below in the triangle example, we can see that areas closer to
       the green vertices are more green, red more red, and blue more blue. For
       areas in between two or three vertices, we see that it is proportionally
-      influenced by the vertices relative to its distance from them (e.g. purple
-      area between red and blue vertices).
+      influenced by its distances to the three vertices and their values (e.g.
+      purple area between red and blue vertices).
     </div>
     <img src="images/4-1.png" style="max-height: 600px; max-width: 800px" />
     <div>
@@ -161,11 +160,59 @@
     <img src="images/4-2.png" style="max-height: 600px; max-width: 800px" />
     <br />
     <h3>Task 5: "Pixel sampling" for texture mapping (15 pts)</h3>
-    <div>some text</div>
+    <div>
+      The goal of this task to is to rasterize texture. In other words, given
+      two triangles, one in screen space and one in texture space, our objective
+      is to mold the latter into the shape of the former. To achieve this, we
+      must first convert screen coordinates to texture coordinates using
+      barycentric coodinates. In other words, we follow almost exactly the same
+      structure as the previous task, where we first determine alpha, beta,
+      gamma of the screen coordinates, then attain the corrsponding texture
+      coordinates by summing and scaling the vertices of the texture triangle
+      accordingly. Then, we simply extract the color from the texture and
+      rasterize it to the screen.
+    </div>
     <br />
-    <div>some text</div>
-    <br />
-    <div>some text</div>
+    <div>
+      However, it is obvious that the texture coordinate does not always
+      corrspond to a perfect texture pixel. In other words, we need to a way to
+      interpolate its color. Here, we implemented 2 different algorithms,
+      nearest pixel and bilinear interpolation. Nearest pixel is very simple,
+      given a uv texture coordinate, we simply round it to the nearest whole
+      number and take that pixel. Obviously this will cause some aliasing as the
+      pixel will not accurately reflect the precise color of the sample. To
+      improve on this, we use bilinear interpolation, which essentially follows
+      the general idea of barycentric interpolation, where the closer a pixel is
+      to the sample point, the proportionally more influence it has on the final
+      result. I used a different, geomtric-based algorithm for this as opposed
+      to the mathematical one shown in lecture. Basically, as explained in the
+      graphic below, we take the four corner pixels surrounding the sample and
+      weigh them based on the size of the opposite square area, acheiving the
+      exact same result.
+    </div>
+    <img
+      src="images/bilinear.png"
+      style="max-height: 400px; max-width: 500px"
+    />
+    <div>
+      As shown below in the examples, bilinear interpolation outperforms nearest
+      pixel in every situation. This is due to the aforementioned fact that
+      nearest pixel is unable to interpolate intermediate colors and is limited
+      to 4 output options, which in most cases, do not contain the correct
+      value, creating not only a lot aliasing but also sharp, drastic color
+      changes. For example, the lat and long lines in the world map SVG are
+      aliased because they are so thin to the point where using nearest pixel
+      might miss them completely. On the other hand, since bilinear
+      interpolation is more or less just a weight average color filter, the
+      sampled image will be smoother and have less high-frequency-induced
+      aliasing. Interestingly, we can see below that nearest pixel produces
+      similar results to bilinear interpolation when the sample rate is
+      increased to 16 samples per pixel. This is because not only are they both
+      calculating the average color, as the sample rate increases, nearest pixel
+      actually approximates bilinear interpolation as the error from
+      force-rounding sample coordinates to whole numbers approaches towards
+      zero.
+    </div>
     <br />
     <div style="display: flex">
       <div>
@@ -219,6 +266,172 @@
         <br />
         <img src="images/5-8.png" style="max-height: 400px; max-width: 500px" />
       </div>
+    </div>
+    <h3>Task 6: "Level sampling" with mipmaps for texture mapping (25 pts)</h3>
+    <div>
+      Finally, we move onto level sampling with mipmaps. The goal of this part
+      is to create a balance between antialiasing and quality. In other words,
+      although our previous parts successfully removed some aliasing, we forced
+      the entire image to same frequency level, causing certain parts of the
+      image to be too blurry, and other parts of the image not entirely
+      alias-free. To combat this problem, we use level sampling. The big idea
+      behind level sampling is that when we map texture onto an image, there
+      will be parts that require higher resolution texture and other parts
+      lower. In terms of triangles, imagine two screen triangles, one big and
+      one small, both mapped to texture triangles of the same resolution.
+      Naturally, we know that there will be more aliasing if we try to cram the
+      texture triangle into the small screen triangle as compared to the big
+      one. Conversely, stretching the texture triangle to fit the big screen
+      triangle may also cause it to be blurry. So the solution simply becomes
+      dynamically adjusting the resolution of the texture triangles depending on
+      their corresponding screen triangles. As a more concrete example, we can
+      imagine that in a video game, objects closer to the camera will require
+      higher definition texture while objects further will use lower definition
+      texture to avoid aliasing.
+    </div>
+    <br />
+    <div>
+      Now that we understand level sampling, we can implement it. First, we need
+      to be able to determine the resolution we need for our texture given a
+      screen triangle. We use the algorithm explained in lecture where we
+      basically try to estimate how much one unit movement in the screen space
+      corresponds to in the texture space. Obviously, the higher the ratio (i.e.
+      one pixel change in screen corresponds to multiple pixels in texture), the
+      less detail we need and vice versa. I won't go into too much detail
+      explaining the exact math since it is identical to lecture, but as shown
+      below, we first calculate <code>[du/dx, dv/dx, du/dy, dv/dy]</code>, which
+      describes the rate at which the axes of the texture space changes with
+      respect to the axes of the screen space. We then use this information to
+      calculate <code>D</code>, which will be our depth level. The results of
+      this algorithm is shown below, where the red-to-yellow gradient describes
+      the low-to-high levels.
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Formula for depth level</div>
+        <br />
+        <img
+          src="images/formula.png"
+          style="max-height: 400px; max-width: 500px"
+        />
+      </div>
+      <div>
+        <div>Heatmap for nearest level sampling</div>
+        <br />
+        <img src="images/6-2.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+      <div>
+        <div>Heatmap for linear level sampling</div>
+        <br />
+        <img src="images/6-3.png" style="max-height: 400px; max-width: 500px" />
+      </div>
+    </div>
+    <br />
+    <div>
+      Finally, with the depth level for each pixel/subpixel, we go to the
+      closest mipmap and extract its color. This will be nearest level sampling.
+      For linear level sampling, we take the colors from the both the mipmaps
+      corresponding to the floor and ceiling levels and weigh them proportional
+      to their distance from the true level.
+    </div>
+    <br />
+    <div>
+      We show 6 combinations between <code>[P_NEAREST, P_LINEAR]</code> and
+      <code>[L_ZERO, L_NEAREST, L_LINEAR]</code> below. As we can see, similar
+      to results from earlier, we always produce less aliased results when we
+      use bilinear interpolation (i.e. right column always better than left
+      column). We can also see that when we use level zero sampling, we have the
+      least blurry results but also arguably the most amount of aliasing. This
+      makes sense because we are forcing every screen triangle to take on the
+      highest resolution textures. One the other hand, linear level sampling is
+      slightly better than nearest level sampling, mostly due to the fact that
+      it has the best of both worlds - achieving a balance between resolution
+      and antialiasing as well as limiting sharp and conspicuous transitions
+      between areas using different texture levels - a big problem in nearest
+      level sampling.
+    </div>
+    <br />
+    <div>
+      Overall, We expect an inverse relationship between speed and quality. The
+      quality improving approaches such as level sampling and pixel
+      interpolation will require more computation while the simpler approaches
+      such as level zero and nearest pixel sampling will require less. Memory
+      usage on the other hand is more complicated. While technically more
+      complex operations tend to require more memory, it is generally trivial.
+      The biggest memory difference in my opinion comes in the mipmaps, which
+      approximately increases the texture storage by 1/3 as modeled by the
+      geometric series 1/4 + 1/16 + 1/64 + ...
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Level zero sampling with nearest pixel</div>
+        <br />
+        <img
+          src="images/6-4-0-n.png"
+          style="max-height: 400px; max-width: 500px"
+        />
+      </div>
+      <div>
+        <div>Level zero sampling with bilinear interpolation</div>
+        <br />
+        <img
+          src="images/6-4-0-b.png"
+          style="max-height: 400px; max-width: 500px"
+        />
+      </div>
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Nearest level sampling with nearest pixel</div>
+        <br />
+        <img
+          src="images/6-4-n-n.png"
+          style="max-height: 400px; max-width: 500px"
+        />
+      </div>
+      <div>
+        <div>Nearest level sampling with bilinear interpolation</div>
+        <br />
+        <img
+          src="images/6-4-n-b.png"
+          style="max-height: 400px; max-width: 500px"
+        />
+      </div>
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>Linear level sampling with nearest pixel</div>
+        <br />
+        <img
+          src="images/6-4-l-n.png"
+          style="max-height: 400px; max-width: 500px"
+        />
+      </div>
+      <div>
+        <div>Linear level sampling with bilinear interpolation</div>
+        <br />
+        <img
+          src="images/6-4-l-b.png"
+          style="max-height: 400px; max-width: 500px"
+        />
+      </div>
+    </div>
+    <br />
+    <h3>Conclusion</h3>
+    <div>
+      I really enjoyed this homework as I improved my knowledge about various
+      topics in pixel sampling, texture sampling, antialiasing, and many
+      different types of interpolation. I saw how the lecture content applied to
+      problems in real life, such as improving aliasing by supersampling, using
+      barycentric coordinates to interpolate and translate between screen and
+      texture space, using level sampling for non-uniform surfaces, and the
+      relationship between different combinations of parameters. While I did not
+      necessarily face any big issues, the project was challenging and made me
+      think about the purpose behind every small implementation detail.
     </div>
   </body>
 </html>
