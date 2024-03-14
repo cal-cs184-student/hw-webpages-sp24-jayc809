@@ -1,7 +1,795 @@
 <html>
-	<head>
-	</head>
-	<body>
-		Homework 3 index.html here
-	</body>
+  <head> </head>
+  <body>
+    <h1>CS184 Homework 3</h1>
+    <h2>Jay Chiang (3035782580)</h2>
+    <h2>
+      GitHub Pages Link:
+      <a
+        href="https://cal-cs184-student.github.io/hw-webpages-sp24-jayc809/hw3/index.html"
+        >cal-cs184-student.github.io/hw-webpages-sp24-jayc809/hw3/index.html</a
+      >
+    </h2>
+    <h3>Overview</h3>
+    <div>rendering pipeline</div>
+    <br />
+    <h3>Part 1: Ray Generation and Scene Intersection</h3>
+    <div>
+      In order to perform ray tracing, we first need to be able to generate
+      rays. In other words, given some <code>(x, y)</code> point in the 2D image
+      space, we want to be able to produce the corresponding
+      <code>(o, d)</code> ray in the 3D world space, by first transitioning over
+      the 3D camera space. As we can see below, our image in camera space ranges
+      from <code>(-tan(0.5 * hFov), -tan(0.5 * vFov), -1)</code> to
+      <code>(tan(0.5 * hFov), tan(0.5 * vFov), -1)</code>, this means that we
+      can conveniently convert coordinates from image space to camera space by
+      simply scaling the bottom left corner in camera space by the normalized
+      image coordinates. This works because any point on an image can be thought
+      of as a pair of percentages of width and height. Now that we have the ray
+      originating from the camera origin and passing through the point in camera
+      space, we can simply multiply it with the camera-to-world matrix to attain
+      the same ray in world space.
+    </div>
+    <br />
+    <img src="images/1-5.png" style="max-height: 400px; max-width: 600px" />
+    <br />
+    <div>
+      With the ability to generate rays for any point in image space, we now
+      have the basic framework for rendering output images. In other words, for
+      every pixel in the output image, we can sample within the pixel for
+      <code>n</code> points and generate <code>n</code> corresponding rays. Each
+      ray will then have a radiance, which will be approximated by our ray
+      tracing simulation in the later parts of this project. By averaging the
+      radiance of each ray, we can ultimately estimate the correct color value
+      at each pixel.
+    </div>
+    <br />
+    <div>
+      Next, we will implement more foundations for our ray tracing algorithm. In
+      order to simulate how light rays interact with our meshes, we must fist
+      have the ability to determine if they will interact at all. In other
+      words, given a ray and a primitive of a mesh, whether that is a triangle
+      or sphere, we must solve for their intersection by calculating 1. the
+      point along the ray's path at which the intersection occurs and 2. the
+      surface normal of the point of intersection.
+    </div>
+    <br />
+    <div>
+      In the case of the ray-triangle intersection, I used the Moller Trumbore
+      algorithm explained in lecture to solve for the point of intersection with
+      high computation efficiency. As illustrated below, given a ray specified
+      by its origin and direction, as well as a triangluar plane specificed by
+      its three vertices in 3D world space, we can calculate the "ray
+      progression" paramter
+      <code>t</code>, where when multiplied with the ray direction and added
+      upon the ray origin gives the point of intersection, as well as the
+      barycentric coordinates <code>b1</code>, <code>b2</code>, and of course
+      <code>b0 = 1 - b1 - b2</code>. After calculating the necessary variables
+      and solving for the target parameters, I determined the surface normal
+      using the weighted sum of the barycentric coordinates and the normals at
+      each vertex. There is not much to talk about in terms of the actual coding
+      implmentation as it is quite straightforward except that we need to check
+      if the ray will intersect the triangle at all. To do this, I checked a
+      couple of things: 1. <code>t</code> is within the "valid collision range"
+      of the ray (i.e. <code>t in [r.min_t, r.max_t]</code>) and 2. the
+      barycentric coordinates are nonnegative and sums to 1. Lastly, we also
+      need to remember to update <code>max_t</code> of a ray as we know
+      collisions further down the line will never happen.
+    </div>
+    <img src="images/1-6.png" style="max-height: 400px; max-width: 500px" />
+    <br />
+    <div>
+      As for the ray-sphere intersection, I did basically the same thing,
+      setting up the quadratic equation as instructed in lecture, solving for
+      <code>t</code> and the surface normal of the point of collision, and
+      checking that a collision will occur in the first place.
+    </div>
+    <img src="images/1-7.png" style="max-height: 400px; max-width: 500px" />
+    <br />
+    <br />
+    <div>
+      Finally, with the aforementioned features, we can now render out some
+      scenes. As shown below, we successfully generated rays and simulated their
+      intersections with both triangles and spheres. The outputed pixel colors
+      are shaded based on the surface normal directions of ray intersections.
+      Unfortunately, there are limitations to the complexity of the scenes we
+      can currently generate as the time it takes to generate a scene scales up
+      very quickly (linearly) with the complexity of the meshes, something we
+      will attempt to optimize in the next part.
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>CBempty.dae</div>
+        <img src="images/1-1.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+      <div>
+        <div>CBspheres_lambertian.dae</div>
+        <img src="images/1-2.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>CBgems.dae</div>
+        <img src="images/1-3.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+      <div>
+        <div>banana.dae</div>
+        <img src="images/1-4.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+    </div>
+    <br />
+    <h3>Part 2: Bounding Volume Hierarchy</h3>
+    <div>
+      We will now improve the rendering time of our scenes by organizing our
+      primitives into a bounding volume hierarchy (BVH) tree. The reason why
+      scenes with high complexity take longer to generate is quite
+      straightforward - as the number of primitives in a mesh increases, both
+      the total number of actual ray intersections and potential ray
+      intersections increases as well. Therefore, it intuitively makes a lot of
+      sense to organize and group primitives based on their position, so that we
+      can avoid wasting our computation on groups that are far from the path of
+      the ray and collisions that we know will never happen.
+    </div>
+    <br />
+    <div>
+      The BVH algorithm is very simple and is composed of a few basic,
+      foundation concepts. 1. To check if a ray will intersect with a primitive,
+      we can check if it will intersect with its group first. 2. To check if a
+      ray will intersect with a group of primitives, we can check if it will
+      intersect with its bounding box, which is essentially the smallest
+      rectangular prism that contains every primitive in the group. 3. To locate
+      the group that the ray will intersect, we can store each group in a binary
+      tree structure, so that we can perform a bianry search very quickly (i.e.
+      <code>O(n) -> O(log(n))</code>). Specifically, we want to organize our
+      tree such that primitives closer to each other will be in the same group.
+      This way, when we make a decision which path to traverse in the recursion,
+      we can minimize the amount of spacial overlap between the two bounding
+      boxes and reach the leaf node (i.e. primitives) through a path that is as
+      short as possible.
+    </div>
+    <br />
+    <img src="images/2-0.png" style="max-height: 400px; max-width: 600px" />
+    <br />
+    <div>
+      With these concepts in mind, we implement our BVH algorithm. First we will
+      need to construct the BVH tree. To do this, we write a recursive function,
+      where given the <code>start</code> and <code>end</code> pointers of the
+      list of primitives, as well as the <code>max_leaf_size</code> that
+      specifies the minimum number of primitives to reduce to for creating a
+      group, performs the following steps: 1. Initiate a BVH node. 2. Loop over
+      the primitives and create a bounding box for them. 3. If the number of
+      primitives is less than or equal to <code>max_leaf_size</code>, we have
+      reached a leaf node and can create a group. To do this, we simply assign
+      the <code>start</code> and <code>end</code> pointers of the node to the
+      given <code>start</code> and <code>end</code> paramters. 4. If we cannot
+      create a leaf node, we must then create a inner node. There will be a few
+      things we need to do: a. We must decide how to split the primitives into
+      two groups. In my implmentation, I chose the heurstic where I split
+      primitives using the mean value on the axis with the highest variance. In
+      other words, the longest dimension (x, y, or z) of the bounding box will
+      be used as the axis and the mean value across all centroids of each
+      primitive on that axis will be used as the "split point". This makes sense
+      intuitively as the split point/plane guarantees that there will be little
+      spatial overlap between the bounding boxes of the two groups while keep
+      each box relatively cube-shaped, reducing the likelihood of a ray
+      intersecting with both groups. b. Partition the primitives by the split
+      point. I used the <code>std::partition</code> function for this, which
+      nicely rearranges the list of primitive pointers for me and returns the
+      pointer to the first element of the second group. I call this pointer
+      <code>split</code>. c. Assign the left and right children of this node to
+      the result of the recursion over <code>[start, split]</code> and
+      <code>[split, end]</code> respectively. 5. Finally, we return the node.
+    </div>
+    <br />
+    <div>
+      As shown below, we now can construct a BVH tree that partitions our
+      primitives relatively nicely, resulting in little overlap between groups
+      and good spatial proximity within groups.
+    </div>
+    <br />
+    <div>
+      Please visit
+      <a href="https://www.youtube.com/watch?v=duKkDXc5ouQ"
+        >youtube.com/watch?v=duKkDXc5ouQ</a
+      >
+      if embedding fails
+    </div>
+    <iframe
+      width="600"
+      height="600"
+      src="https://www.youtube.com/embed/duKkDXc5ouQ?autoplay=1&loop=1&playlist=duKkDXc5ouQ&controls=0"
+      title=""
+      frameborder="0"
+      allow="accelerometer; autoplay; loop; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen
+    ></iframe>
+    <br />
+    <br />
+    <div>
+      The BVH tree traversal algorithm is also quite straightforward. First,
+      similar to triangles and spheres, we need to be able to detect
+      intersections between a ray and a bounding box. I used the algorithm
+      explained in lecture where we essentially calculate the intersection
+      interval between the ray and the bounding box for each individual axis,
+      and using the three resulting axis-oriented pairs of
+      <code>[min_t, max_t]</code>s to clamp the original interval of the ray,
+      effectively ensuring that the ray is simultaneously crossing all three
+      axes over the final, clamped and valid intersection interval. Next, we
+      simply traverse the tree, going down each path where an intersection with
+      the bounding box occurs. Once we reach a leaf node, we can locate the
+      primitive with the closest point of intersection relative to the ray
+      origin, which is effectively the correct primitive of which the ray
+      intersects.
+    </div>
+    <br />
+    <div>
+      As shown below, these are four scenes with high complexity that would've
+      taken way too long (at least 4 minutes) to render without BVH but only
+      took a less than a second to render with BVH. There is no doubt that BVH
+      has significantly raised our rendering limits.
+    </div>
+    <br />
+    <div>maxplanck.dae</div>
+    <img src="images/2-5.png" style="max-height: 600px; max-width: 800px" />
+    <br />
+    <br />
+    <div>CBlucy.dae</div>
+    <img src="images/2-6.png" style="max-height: 600px; max-width: 800px" />
+    <br />
+    <br />
+    <div>CBdragon.dae</div>
+    <img src="images/2-7.png" style="max-height: 600px; max-width: 800px" />
+    <br />
+    <br />
+    <div>peter.dae</div>
+    <img src="images/2-8.png" style="max-height: 600px; max-width: 800px" />
+    <br />
+    <br />
+    <div>
+      Moreover, we can also see from the table below of how the rendering time
+      changes with and without the BVH optimization. The rendering times are
+      measured using a M1 MacBook Pro using 8 threads on 800x600 resolution.
+      From the relationship between the rendering times and the complexity of
+      the scene (i.e. primitive count), we can see that our predictions from
+      earlier were more or less correct. For the rendering times without BVH,
+      the data suggests a linear relationship (<code>O(n)</code>) with
+      increasing complexity whereas for with BVH, there seems to be a
+      logarithmic relationship (<code>O(log(n))</code>).
+    </div>
+    <table style="border-spacing: 20px">
+      <thead>
+        <th>scene</th>
+        <th>result</th>
+        <th>primitives count</th>
+        <th>rendering time without BVH</th>
+        <th>rendering time with BVH</th>
+      </thead>
+      <tbody>
+        <tr>
+          <td>cow.dae</td>
+          <td>
+            <img
+              src="images/2-1.png"
+              style="max-height: 100px; max-width: 100px"
+            />
+          </td>
+          <td>5856</td>
+          <td>26.9670s</td>
+          <td>0.0652s</td>
+        </tr>
+        <tr>
+          <td>banana.dae</td>
+          <td>
+            <img
+              src="images/2-2.png"
+              style="max-height: 100px; max-width: 100px"
+            />
+          </td>
+          <td>2458</td>
+          <td>13.4547s</td>
+          <td>0.0471s</td>
+        </tr>
+        <tr>
+          <td>teapot.dae</td>
+          <td>
+            <img
+              src="images/2-3.png"
+              style="max-height: 100px; max-width: 100px"
+            />
+          </td>
+          <td>2464</td>
+          <td>12.7413s</td>
+          <td>0.0630s</td>
+        </tr>
+        <tr>
+          <td>beetle.dae</td>
+          <td>
+            <img
+              src="images/2-4.png"
+              style="max-height: 100px; max-width: 100px"
+            />
+          </td>
+          <td>7558</td>
+          <td>38.3507s</td>
+          <td>0.0556s</td>
+        </tr>
+        <tr>
+          <td>CBcoil.dae</td>
+          <td>
+            <img
+              src="images/2-9.png"
+              style="max-height: 100px; max-width: 100px"
+            />
+          </td>
+          <td>7884</td>
+          <td>45.7617s</td>
+          <td>0.0578s</td>
+        </tr>
+        <tr>
+          <td>maxplanck.dae</td>
+          <td>
+            <img
+              src="images/2-5.png"
+              style="max-height: 100px; max-width: 100px"
+            />
+          </td>
+          <td>50801</td>
+          <td>283.8224s</td>
+          <td>0.0722s</td>
+        </tr>
+        <tr>
+          <td>CBlucy.dae</td>
+          <td>
+            <img
+              src="images/2-6.png"
+              style="max-height: 100px; max-width: 100px"
+            />
+          </td>
+          <td>133796</td>
+          <td>N/A (est. 500-600s)</td>
+          <td>0.0708s</td>
+        </tr>
+      </tbody>
+    </table>
+    <h3>Part 3: Direct Illumination</h3>
+    <div>
+      In this part, we will implement direct illumination, which will simulate
+      how light rays emitted by a light source interact with our scene and how
+      they enter and are captured by the camera, improving shading and taking us
+      one step closer to rendering realistic images. In this part, our
+      approximation will be composed of two different lights - zero-bounce and
+      one-bounce. Essentially, zero-bounce light refers to the light that goes
+      directly from the light source to the camera, which in real-life, is
+      basically how we can see the Sun, computer screens, or fire. The effect of
+      this light is very easy to calculate as we simply 1. sample a ray, 2. find
+      its intersection with a area light source, if any, 3. return the radiance
+      of the intersected material. On the other hand, one-bounce light refers to
+      the light that reaches the camera after bouncing off an object, which in
+      real-life, is basically how we see anything that doesn't emit light
+      themselves. We will implement two different ways of estimating one-bounc
+      light - uniform hemisphere sampling and importance sampling.
+    </div>
+    <br />
+    <div>
+      However, before we talk about the two approaches, we need to first
+      understand how bounced/reflected light is estimated. As shown below, given
+      a collection of lights coming from different sources/directions
+      (<code>wj</code>) that are reflected off the same point (<code>p</code>)
+      and towards the same destination/direction (<code>wr</code>), we will use
+      the Monte Carlo estimator to integrate and approximate the combined
+      resulting light. The outer summation and normalization reflect the average
+      combination of the <code>n</code> incoming lights. The
+      <code>fr</code> term refers to the reflectance at point
+      <code>p</code> from <code>wj</code> to <code>wr</code> while the
+      <code>Li</code> term represents the actual radiance of the light. The
+      cosine term accounts for the intensity of reflection and the pdf term
+      accounts for the probability of picking the <code>wj</code> incoming
+      direction. In other words, the estimator essentially returns the
+      normalized combined light coming off a point into the camera.
+    </div>
+    <br />
+    <img src="images/3-7.png" style="max-height: 400px; max-width: 600px" />
+    <br />
+    <br />
+    <div>
+      I like to think about uniform hemisphere sampling as how we kinda treat a
+      reflecting surface as a light source. In other words, we essentially treat
+      the reflected, one-bounce light off a surface as a direct, zero-bounce
+      light emitted by that surface. Therefore, it makes sense intuitively to
+      calculate what type of light the surface "holds", which, from what we have
+      talked about before, boils down to the combined result of all the light
+      that hits the target point on surface from all the actual light sources in
+      the scene. Obviously, there exist an infinite amount of potential incoming
+      directions across the entire hemisphere normal to the surface, which is
+      exactly why uniform hemisphere sampling is the technique where we sample
+      potential incoming rays, hope that some of them instersects with a light
+      source (i.e. is an actual light ray), and use the Monte Carlo estimator to
+      compute the combined result. The actual implemented process is as follows:
+      1. Loop over the number of samples we want to generate. 2. For each
+      iteration, sample a potential
+      <code>wj</code>, create an incoming ray with origin at <code>p</code> and
+      direction from <code>wj</code>, and set the intersection interval to be
+      <code>[EPSILON, INF]</code>. 3. Check if the ray intersects with anything,
+      if so, use its radiance <code>Li</code>, the reflectance <code>fr</code>,
+      and the cosine term between the surface normal and <code>wj</code> to
+      attain the partial light contributed by this ray. 4. Finally, we take the
+      accumulated light and divide it by both the number of samples as well as
+      the pdf, which in this case is constant (i.e. 2 pi since we sample
+      uniformly over the hemisphere) and can be taken out of the summation.
+    </div>
+    <br />
+    <div>
+      There are a few shortcomings for uniform hemisphere sampling. For example,
+      there is likely to be noise in the image since sampled rays don't always
+      intersect with a light source and relying on random sampling can take a
+      long time to converge. Moreover, it does not work with point lights since
+      the probability of a sampled ray intersecting with a point is effectively
+      zero. Therefore, to improve on all these problems, we turn to importance
+      sampling, which I personally believe makes a lot more sense and models the
+      real world better. Importance sampling is essentially the process where
+      instead of hoping that we can go from the point of reflection to a light
+      source, we go directly from a light source to the point of reflection. If
+      the light can reach the point without being blocked and redirected first,
+      it will contribute to its radiance, and vice versa. In practice, we also
+      build a Monte Carlo estimator using the following steps: 1. Loop over all
+      light sources in our scene. 2. For each iteration, check if the light is a
+      point light. If so, we only need to take one sample as there is only one
+      possible radiance from a point light. Otherwise, we need to take
+      <code>num_samples</code> samples. 3. Take the required amount of samples
+      from the light source, attaining <code>Li</code>, <code>wj</code>, the
+      distance from the point to the light source, and the pdf. 4. We now want
+      to check if the light will intersect with another primitive and be
+      redirected before reach our point. Therefore, we create an incoming ray
+      with <code>wj</code>, set its interval to
+      <code>[EPSILON, dist_to_light - EPSILON]</code>, and check if it has any
+      intersections. 5. If no intersection occurs, we know this light will reach
+      our point, so we add the partial light calculated with <code>fr</code>,
+      <code>Li</code>, cosine term, and the pdf to the accumulated light. 6.
+      Finally, we return the accumulation divied by the total number of samples
+      across all light sources.
+    </div>
+    <br />
+    <div>
+      As shown below in the side-by-side comparisons between uniform hemisphere
+      and importance sampling both using 32 light rays and 64 samples per pixel,
+      we can see that our predictions were basically all confirmed. First of
+      all, we can see that there is visibly more noise for uniform hemisphere
+      sampling, which we can attribute to the fact that it on average takes
+      longer and more samples to converge. In other words, in order to get a
+      close estimate to the true radiance, uniform hemisphere sampling would
+      have to produce a sample that hits all the light sources, which we know is
+      difficult across the entire hemisphere of possible ray directions.
+      Similarly, we can see in the dragon example that if a scene has no area
+      light, we won't be able to generate any image since it is effectively
+      impossible for any sampled ray to intersect a point light.
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>CBbunny.dae (uniform hemisphere sampling)</div>
+        <img src="images/3-1.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+      <div>
+        <div>CBbunny.dae (importance sampling)</div>
+        <img src="images/3-2.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>CBspheres_lambertian.dae (uniform hemisphere sampling)</div>
+        <img src="images/3-3.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+      <div>
+        <div>CBspheres_lambertian.dae (importance sampling)</div>
+        <img src="images/3-4.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+    </div>
+    <br />
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>dragon.dae (uniform hemisphere sampling)</div>
+        <img src="images/3-5.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+      <div>
+        <div>dragon.dae (importance sampling)</div>
+        <img src="images/3-6.png" style="max-height: 600px; max-width: 800px" />
+      </div>
+    </div>
+    <br />
+    <div>
+      Additionally, we can see the relationship bewteen the number of sampled
+      rays per area light and our render quality when using importance sampling.
+      By examining the soft shadows, such as the edges of the shadow casted by
+      the spheres onto the floor, we can see that more samples led to less
+      noise. This makes a lot of sense considering how importance sampling
+      works. If we look at the case with 1 sample per area light, we can see
+      that pixels in the soft shadow areas can only either be entirely black or
+      floor-colored, which makes perfect sense since its color is determined by
+      just one ray. If by chance the ray came from the far side of the light (as
+      shown by the red line), it has a higher chance of hitting the sphere
+      before the floor, which results in a black pixel. Similarly, if by chance
+      the ray came from the near side of the light (as shown by the blue line),
+      it would more likely hit the point on the floor directly without touching
+      the sphere, resulting in a floor-colored pixel. On the other hand, if we
+      look at a spot in the hard shadows, we can see that whether the ray came
+      from the far side or near side (as shown by the green and yellow lines)
+      doesn't really matter since they both get intercepted by the sphere before
+      reaching the floor, resulting in a consistent black pixel. Moreover, since
+      importance sampling takes an the mean radiance over all samples, we see a
+      smoother blending effect with increasing sample size as the ray samples
+      "average out" over the entire area light, resulting in less noise and a
+      more accurate estimation. This is why there is so much more variance and
+      noise in the images with a lower sample size per area light as well as why
+      it is concentrated more in the soft shadows.
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>1 sample per area light</div>
+        <img src="images/3-8.png" style="max-height: 300px; max-width: 400px" />
+      </div>
+      <div>
+        <div>4 samples per area light</div>
+        <img src="images/3-9.png" style="max-height: 300px; max-width: 400px" />
+      </div>
+      <div>
+        <div>16 samples per area light</div>
+        <img
+          src="images/3-10.png"
+          style="max-height: 300px; max-width: 400px"
+        />
+      </div>
+      <div>
+        <div>64 samples per area light</div>
+        <img
+          src="images/3-11.png"
+          style="max-height: 300px; max-width: 400px"
+        />
+      </div>
+    </div>
+    <br />
+    <div>demo for explanation</div>
+    <img src="images/3-12.png" style="max-height: 600px; max-width: 800px" />
+    <h3>Part 4: Global Illumination</h3>
+    <div></div>
+    <table style="border-spacing: 20px">
+      <thead>
+        <th></th>
+        <th>m=0</th>
+        <th>m=1</th>
+        <th>m=2</th>
+      </thead>
+      <tbody>
+        <tr>
+          <td>isAccumBounces=False</td>
+          <td>
+            <img
+              src="images/4-7.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-8.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-9.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+        </tr>
+        <tr>
+          <td>isAccumBounces=True</td>
+          <td>
+            <img
+              src="images/4-1.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-2.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-3.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <table style="border-spacing: 20px">
+      <thead>
+        <th></th>
+        <th>m=3</th>
+        <th>m=4</th>
+        <th>m=5</th>
+      </thead>
+      <tbody>
+        <tr>
+          <td>isAccumBounces=False</td>
+          <td>
+            <img
+              src="images/4-10.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-11.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-12.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+        </tr>
+        <tr>
+          <td>isAccumBounces=True</td>
+          <td>
+            <img
+              src="images/4-4.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-5.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+          <td>
+            <img
+              src="images/4-6.png"
+              style="max-height: 360px; max-width: 480px"
+            />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div>
+      We can also compare the effects of direct illumination (m=1) and
+      indirection illumination (m=2...5) on the final image.
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>CBbunny.dae (direct illumination only)</div>
+        <img
+          src="images/4-13.png"
+          style="max-height: 360px; max-width: 480px"
+        />
+      </div>
+      <div>
+        <div>CBbunny.dae (indirect illumination only)</div>
+        <img src="images/4-14.png" style="max-height: 360; max-width: 480px" />
+      </div>
+    </div>
+    <br />
+    <div>Here are some more scenes rendered with global illumination.</div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>banana.dae</div>
+        <img
+          src="images/4-15.png"
+          style="max-height: 360px; max-width: 480px"
+        />
+      </div>
+      <div>
+        <div>dragon.dae</div>
+        <img src="images/4-16.png" style="max-height: 360; max-width: 480px" />
+      </div>
+    </div>
+    <br />
+    <div>maxplanck.dae</div>
+    <img src="images/4-17.png" style="max-height: 600px; max-width: 800px" />
+    <br />
+    <div>Next, we implement russian roulette.</div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>CBbunny.dae (m=0)</div>
+        <img
+          src="images/4-18.png"
+          style="max-height: 360px; max-width: 480px"
+        />
+      </div>
+      <div>
+        <div>CBbunny.dae (m=1)</div>
+        <img src="images/4-19.png" style="max-height: 360; max-width: 480px" />
+      </div>
+      <div>
+        <div>CBbunny.dae (m=2)</div>
+        <img src="images/4-20.png" style="max-height: 360; max-width: 480px" />
+      </div>
+    </div>
+    <div style="display: flex">
+      <div>
+        <div>CBbunny.dae (m=3)</div>
+        <img
+          src="images/4-21.png"
+          style="max-height: 360px; max-width: 480px"
+        />
+      </div>
+      <div>
+        <div>CBbunny.dae (m=4)</div>
+        <img src="images/4-22.png" style="max-height: 360; max-width: 480px" />
+      </div>
+      <div>
+        <div>CBbunny.dae (m=100)</div>
+        <img src="images/4-23.png" style="max-height: 360; max-width: 480px" />
+      </div>
+    </div>
+    <br />
+    <div>
+      Finally, with global illumination completed, we can see how increasing the
+      sample rate (i.e. number of light rays sampled per pixel) effects the
+      amount of noise in the ouput image.
+    </div>
+    <br />
+    <div style="display: flex">
+      <div>
+        <div>CBbunny.dae (s=1)</div>
+        <img
+          src="images/4-24.png"
+          style="max-height: 360px; max-width: 480px"
+        />
+      </div>
+      <div>
+        <div>CBbunny.dae (s=2)</div>
+        <img src="images/4-25.png" style="max-height: 360; max-width: 480px" />
+      </div>
+      <div>
+        <div>CBbunny.dae (s=4)</div>
+        <img src="images/4-26.png" style="max-height: 360; max-width: 480px" />
+      </div>
+      <div>
+        <div>CBbunny.dae (s=8)</div>
+        <img src="images/4-27.png" style="max-height: 360; max-width: 480px" />
+      </div>
+    </div>
+    <div style="display: flex">
+      <div>
+        <div>CBbunny.dae (s=16)</div>
+        <img
+          src="images/4-28.png"
+          style="max-height: 360px; max-width: 480px"
+        />
+      </div>
+      <div>
+        <div>CBbunny.dae (s=64)</div>
+        <img src="images/4-29.png" style="max-height: 360; max-width: 480px" />
+      </div>
+      <div>
+        <div>CBbunny.dae (s=1024)</div>
+        <img src="images/4-30.png" style="max-height: 360; max-width: 480px" />
+      </div>
+    </div>
+    <h3>Part 5: Adaptive Sampling</h3>
+    <div>Amazing how fast it runs on local</div>
+    <br />
+    <div style="display: flex">
+      <img src="images/5-1.png" style="max-height: 360px; max-width: 480px" />
+      <img src="images/5-2.png" style="max-height: 360; max-width: 480px" />
+    </div>
+    <br />
+    <div style="display: flex">
+      <img src="images/5-3.png" style="max-height: 360px; max-width: 480px" />
+      <img src="images/5-4.png" style="max-height: 360; max-width: 480px" />
+    </div>
+  </body>
 </html>
